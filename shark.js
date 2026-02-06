@@ -17,18 +17,19 @@
  *   1. Si proie dans le rayon de vision → HUNT (seek vers proie)
  *   2. Sinon → WANDER (exploration)
  * 
- * Cette classe HÉRITE de Vehicle pour réutiliser les comportements de base.
+ * Cette classe HÉRITE de Boid pour réutiliser les comportements de base.
  */
 
-class Shark extends Vehicle {
+class Shark extends Boid {
 
     /**
      * Constructeur du requin prédateur
      * @param {number} x - Position initiale X
      * @param {number} y - Position initiale Y
+     * @param {p5.Image} image - Image du requin
      */
-    constructor(x, y) {
-        super(x, y);  // Appel du constructeur parent (Vehicle)
+    constructor(x, y, image) {
+        super(x, y, image);  // Appel du constructeur parent (Boid)
 
         // ═══════════════════════════════════════════════
         // PARAMÈTRES SPÉCIFIQUES AU PRÉDATEUR
@@ -40,34 +41,9 @@ class Shark extends Vehicle {
 
         // Rayon de vision pour la chasse
         this.visionRadius = 200;
-    }
 
-    /**
-     * AFFICHAGE DU REQUIN
-     * ───────────────────
-     * Forme de requin stylisée avec nageoire dorsale
-     */
-    show() {
-        push();
-        translate(this.pos.x, this.pos.y);
-        rotate(this.vel.heading() + Math.PI);  // Orientation correcte
-
-        fill(this.color);
-        noStroke();
-
-        // Corps du requin (forme de flèche)
-        beginShape();
-        vertex(this.r * 1.5, 0);          // Nez
-        vertex(-this.r, -this.r);          // Arrière gauche
-        vertex(-this.r * 0.5, 0);          // Encoche queue
-        vertex(-this.r, this.r);           // Arrière droit
-        endShape(CLOSE);
-
-        // Nageoire dorsale
-        fill(150, 0, 0);
-        triangle(0, 0, -this.r / 2, 0, -5, -this.r);
-
-        pop();
+        // Image du requin pointe vers la droite
+        this.imageRotationOffset = 0;
     }
 
     /**

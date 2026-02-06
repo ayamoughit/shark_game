@@ -68,6 +68,9 @@ class Boid {
         this.panicLevel = 0;
         this.panicDecayRate = 0.01;
         this.fleeRadius = 150;
+
+        // Pour évitement d'obstacles (méthode avoid du prof)
+        this.largeurZoneEvitementDevantVaisseau = this.r / 2;
     }
 
     // Equivalent de "applyBehaviors" dans le code des autres exemples
@@ -422,6 +425,101 @@ class Boid {
         return totalForce;
     }
 
+    // Évitement d'obstacles (version du professeur avec ahead/ahead2)
+    avoid(obstacles) {
+        // calcul d'un vecteur ahead devant le véhicule
+        let ahead = this.vel.copy();
+        ahead.mult(30);
+        // on calcue ahead2 deux fois plus petit
+        let ahead2 = ahead.copy();
+        ahead2.mult(0.5);
+
+        if (Boid.debug) {
+            this.drawVector(this.pos, ahead, "yellow");
+        }
+
+        // Calcul des coordonnées du point au bout de ahead
+        let pointAuBoutDeAhead = this.pos.copy().add(ahead);
+        let pointAuBoutDeAhead2 = this.pos.copy().add(ahead2);
+
+        // Detection de l'obstacle le plus proche
+        let obstacleLePlusProche = this.getObstacleLePlusProche(obstacles);
+
+        // Si pas d'obstacle, on renvoie un vecteur nul
+        if (obstacleLePlusProche == undefined) {
+            return createVector(0, 0);
+        }
+
+        // On calcule la distance entre le cercle et le bout du vecteur ahead
+        let distance1 = pointAuBoutDeAhead.dist(obstacleLePlusProche.pos);
+        let distance2 = pointAuBoutDeAhead2.dist(obstacleLePlusProche.pos);
+        let distance = min(distance1, distance2);
+
+        if (Boid.debug) {
+            fill("red");
+            circle(pointAuBoutDeAhead.x, pointAuBoutDeAhead.y, 10);
+            fill("blue");
+            circle(pointAuBoutDeAhead2.x, pointAuBoutDeAhead2.y, 10);
+
+            push();
+            stroke(100, 100);
+            strokeWeight(this.largeurZoneEvitementDevantVaisseau);
+            line(this.pos.x, this.pos.y, pointAuBoutDeAhead.x, pointAuBoutDeAhead.y);
+            pop();
+        }
+
+        // si la distance est < rayon de l'obstacle, collision possible
+        if (distance < obstacleLePlusProche.r + this.largeurZoneEvitementDevantVaisseau) {
+            let force;
+            if (distance1 < distance2) {
+                force = p5.Vector.sub(pointAuBoutDeAhead, obstacleLePlusProche.pos);
+            } else {
+                force = p5.Vector.sub(pointAuBoutDeAhead2, obstacleLePlusProche.pos);
+            }
+
+            if (Boid.debug) {
+                this.drawVector(obstacleLePlusProche.pos, force, "yellow");
+            }
+
+            force.setMag(this.maxSpeed);
+            force.sub(this.vel);
+            force.limit(this.maxForce / 2);
+            return force;
+        } else {
+            return createVector(0, 0);
+        }
+    }
+
+    // Trouver l'obstacle le plus proche
+    getObstacleLePlusProche(obstacles) {
+        let plusPetiteDistance = 100000000;
+        let obstacleLePlusProche = undefined;
+
+        obstacles.forEach(o => {
+            const distance = this.pos.dist(o.pos);
+            if (distance < plusPetiteDistance) {
+                plusPetiteDistance = distance;
+                obstacleLePlusProche = o;
+            }
+        });
+
+        return obstacleLePlusProche;
+    }
+
+    // Dessiner un vecteur (debug)
+    drawVector(pos, v, color) {
+        push();
+        strokeWeight(3);
+        stroke(color);
+        line(pos.x, pos.y, pos.x + v.x, pos.y + v.y);
+        let arrowSize = 5;
+        translate(pos.x + v.x, pos.y + v.y);
+        rotate(v.heading());
+        translate(-arrowSize / 2, 0);
+        triangle(0, arrowSize / 2, 0, -arrowSize / 2, arrowSize, 0);
+        pop();
+    }
+
 
     applyForce(force) {
         this.acc.add(force);
@@ -448,7 +546,17 @@ class Boid {
             // Rotation selon la direction du mouvement + offset selon l'image
             rotate(this.vel.heading() + this.imageRotationOffset);
 
+            // Appliquer la teinte si définie (pour les sous-classes)
+            if (this.tint) {
+                tint(this.tint);
+            }
+
             image(this.image, 0, 0, this.r, this.r);
+
+            // Retirer la teinte après le dessin
+            if (this.tint) {
+                noTint();
+            }
 
             pop();
 
