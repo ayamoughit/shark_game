@@ -159,6 +159,7 @@ function initSimulation() {
     // Créer le REQUIN
     shark = new Boid(width / 2, height / 2, sharkImage);
     shark.r = 160;
+    shark.imageRotationOffset = 0;  // L'image du requin pointe vers la droite
     shark.maxSpeed = difficulty === "hard" ? 7 : 6;
     shark.maxForce = 0.25;
     shark.distanceCercle = 200;
@@ -1158,38 +1159,32 @@ function drawPauseScreen() {
 }
 
 function drawGameOverScreen() {
-    fill(0, 0, 0, 220);
-    noStroke();
-    rect(0, 0, width, height);
+    // Pas de fond - le jeu reste visible en arrière-plan
 
     textAlign(CENTER, CENTER);
 
-    fill(255, 80, 80);
-    textSize(75);
+    // Titre rose/corail
+    fill(255, 100, 120);
+    textSize(55);
     textStyle(BOLD);
-    text("⏰ TEMPS ÉCOULÉ!", width / 2, height / 4);
+    text("⏰ TEMPS ÉCOULÉ!", width / 2, height / 2 - 80);
 
-    // Stats détaillées
+    // Score final
     fill(255);
-    textSize(30);
-    text("Score Final: " + score, width / 2, height / 2 - 80);
+    textSize(26);
+    textStyle(NORMAL);
+    text("Score Final: " + score, width / 2, height / 2 - 20);
 
-    fill(100, 200, 255);
-    textSize(24);
-    text("🐟 Poissons mangés: " + fishEaten, width / 2, height / 2 - 35);
+    // Stats en gris clair
+    fill(180);
+    textSize(18);
+    text("🐟 Poissons mangés: " + fishEaten, width / 2, height / 2 + 15);
 
     fill(255, 215, 0);
-    text("🌟 Poissons dorés: " + goldenFishEaten, width / 2, height / 2);
+    text("🌟 Poissons dorés: " + goldenFishEaten, width / 2, height / 2 + 40);
 
-    fill(255, 150, 80);
-    text("🔥 Combo max: x" + maxCombo, width / 2, height / 2 + 35);
-
-    if (score >= highScores[difficulty]) {
-        fill(255, 220, 80);
-        textSize(35);
-        textStyle(BOLD);
-        text("🏆 NOUVEAU RECORD!", width / 2, height / 2 + 90);
-    }
+    fill(255, 150, 100);
+    text("🔥 Combo max: x" + maxCombo, width / 2, height / 2 + 65);
 
     drawRestartButton();
 }

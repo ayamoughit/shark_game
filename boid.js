@@ -1,125 +1,87 @@
-/**
- * ╔════════════════════════════════════════════════════════════════════════════╗
- * ║                    BOID CLASS - STEERING BEHAVIORS                        ║
- * ╠════════════════════════════════════════════════════════════════════════════╣
- * ║  Master IA - CASA G1 2025-2026                                            ║
- * ║  Module: Intelligence Artificielle Réactive                               ║
- * ╚════════════════════════════════════════════════════════════════════════════╝
- * 
- * RÉFÉRENCES THÉORIQUES:
- * ─────────────────────
- * • Craig Reynolds (1987) - "Flocks, Herds, and Schools: A Distributed 
- *   Behavioral Model" - Papier fondateur des Boids
- * • Reynolds (1999) - "Steering Behaviors for Autonomous Characters" - GDC
- * 
- * CONCEPT FONDAMENTAL - IA RÉACTIVE:
- * ──────────────────────────────────
- * Chaque agent (Boid) prend ses décisions LOCALEMENT en fonction de:
- *   1. Son état interne (position, vélocité, niveau de panique)
- *   2. Les agents dans son rayon de perception
- *   3. Les obstacles et dangers environnants
- * 
- * → Pas de planification globale, pas de communication centralisée
- * → Le comportement collectif ÉMERGE des interactions locales
- * 
- * STEERING BEHAVIORS IMPLÉMENTÉS:
- * ───────────────────────────────
- * 1. FLOCKING (comportement de banc):
- *    - Alignment: s'orienter dans la même direction que les voisins
- *    - Cohesion: rester proche du centre du groupe
- *    - Separation: maintenir une distance minimale
- * 
- * 2. FLEE (fuite): s'éloigner d'une menace
- * 3. PURSUE (poursuite): anticiper la position future de la cible
- * 4. WANDER (errance): exploration pseudo-aléatoire
- * 5. OBSTACLE AVOIDANCE: évitement d'obstacles
- * 
- * FORMULE DE STEERING (Reynolds):
- * ───────────────────────────────
- *   steering = desired_velocity - current_velocity
- *   steering = truncate(steering, max_force)
- */
+// Flocking
+// Daniel Shiffman
+// https://thecodingtrain.com/CodingChallenges/124-flocking-boids.html
+// https://youtu.be/mhjuuHl6qHM
 
 class Boid {
-    static debug = false;  // Mode debug pour visualiser les forces
-
+    static debug = false;
     constructor(x, y, image) {
-        // ═══════════════════════════════════════════════
-        // VECTEURS DE MOUVEMENT (Modèle cinématique)
-        // ═══════════════════════════════════════════════
-        this.pos = createVector(x, y);           // Position actuelle
-        this.vel = p5.Vector.random2D();         // Vélocité (direction + magnitude)
-        this.vel.setMag(random(2, 4));           // Vitesse initiale aléatoire
-        this.acc = createVector();               // Accélération (somme des forces)
 
-        // Contraintes physiques
-        this.maxForce = 0.2;   // Force max de steering (réactivité)
-        this.maxSpeed = 5;     // Vitesse maximale
-        this.r = 6;            // Rayon du boid (pour collision/affichage)
+        this.pos = createVector(x, y);
 
-        // ═══════════════════════════════════════════════
-        // APPARENCE VISUELLE
-        // ═══════════════════════════════════════════════
+        this.vel = p5.Vector.random2D();
+        this.vel.setMag(random(2, 4));
+        this.acc = createVector();
+        this.maxForce = 0.2;
+        this.maxSpeed = 5;
+        this.r = 6;
+
+        // si le boid est une image
         if (image !== undefined) {
             this.image = image;
-        } else {
-            this.color = color(100, 200, 255);
+
+            // largeur image
+            const li = this.image.width;
+            // hauteur image
+            const hi = this.image.height;
+            // on remet les valeurs à l'échelle par rapport au rayon
+            // du véhicule
+            const ratio = li / hi;
+            // la largeur de l'image sera égale à r
+            this.imageL = this.r;
+            // la hauteur de l'image sera égale à r/ratio
+            this.imageH = this.r / ratio;
         }
 
-        // ═══════════════════════════════════════════════
-        // PARAMÈTRES FLOCKING (Reynolds)
-        // Poids des 3 règles fondamentales
-        // ═══════════════════════════════════════════════
-        this.perceptionRadius = 50;      // Rayon de vision pour flocking
-        this.alignWeight = 1.5;          // Poids de l'alignement
-        this.cohesionWeight = 1.0;       // Poids de la cohésion
-        this.separationWeight = 2.0;     // Poids de la séparation (prioritaire)
-        this.boundariesWeight = 10;      // Force de répulsion des bords
+        // Offset de rotation pour l'image (dépend de l'orientation originale)
+        // Math.PI si l'image pointe vers la gauche, 0 si elle pointe vers la droite
+        this.imageRotationOffset = Math.PI;
 
-        // ═══════════════════════════════════════════════
-        // LIMITES DE L'ENVIRONNEMENT
-        // ═══════════════════════════════════════════════
+        this.perceptionRadius = 25;
+        // pour le comportement align
+        this.alignWeight = 1.5;
+        // pour le comportement cohesion
+        this.cohesionWeight = 1;
+        // Pour la séparation
+        this.separationWeight = 2;
+        // Pour le confinement
+        this.boundariesWeight = 10;
+
+        // Paramètres comportement confinement
         this.boundariesX = 0;
-        this.boundariesY = 0;
+        this.boundariesY = 0
         this.boundariesWidth = width;
         this.boundariesHeight = height;
-        this.boundariesDistance = 50;
+        this.boundariesDistance = 25;
 
-        // ═══════════════════════════════════════════════
-        // WANDER BEHAVIOR (Exploration)
-        // Basé sur un cercle projeté devant l'agent
-        // ═══════════════════════════════════════════════
-        this.distanceCercle = 150;       // Distance du cercle de wander
-        this.wanderRadius = 50;          // Rayon du cercle de wander
-        this.wanderTheta = 0;            // Angle courant sur le cercle
-        this.displaceRange = 0.3;        // Amplitude du déplacement aléatoire
+        // Paramètres  comportement Wander
+        // pour comportement wander
+        this.distanceCercle = 150;
+        this.wanderRadius = 50;
+        this.wanderTheta = 0;
+        this.displaceRange = 0.1;
 
-        // ═══════════════════════════════════════════════
-        // ÉTAT ÉMOTIONNEL (Extension du modèle)
-        // Simule le stress/panique du poisson
-        // ═══════════════════════════════════════════════
-        this.panicLevel = 0;             // 0 = calme, 1 = panique maximale
-        this.panicDecayRate = 0.01;      // Vitesse de retour au calme
-        this.fleeRadius = 150;           // Rayon de détection du danger
+        // Propriété pour poisson doré (jeu)
+        this.isGolden = false;
+
+        // Niveau de panique (extension pour le jeu)
+        this.panicLevel = 0;
+        this.panicDecayRate = 0.01;
+        this.fleeRadius = 150;
     }
 
-    // ========================================
-    // COMPORTEMENT FLOCKING (Poissons)
-    // ========================================
-
+    // Equivalent de "applyBehaviors" dans le code des autres exemples
+    // flock signifie "se rassembler" en anglais
     flock(boids) {
         let alignment = this.align(boids);
         let cohesion = this.cohesion(boids);
         let separation = this.separation(boids);
-        let boundaries = this.boundaries();
+        let boundaries = this.boundaries(this.boundariesX, this.boundariesY, this.boundariesWidth, this.boundariesHeight, this.boundariesDistance);
+        //let boundaries = this.boundaries(100, 200, 800, 400, 25);
 
-        // Poids ajustés selon le niveau de panique
-        // En panique: moins de cohésion, plus de séparation
-        let panicFactor = this.panicLevel;
-
-        alignment.mult(this.alignWeight * (1 - panicFactor * 0.5));
-        cohesion.mult(this.cohesionWeight * (1 - panicFactor * 0.8));
-        separation.mult(this.separationWeight * (1 + panicFactor * 2));
+        alignment.mult(this.alignWeight);
+        cohesion.mult(this.cohesionWeight);
+        separation.mult(this.separationWeight);
         boundaries.mult(this.boundariesWeight);
 
         this.applyForce(alignment);
@@ -128,19 +90,18 @@ class Boid {
         this.applyForce(boundaries);
     }
 
-    // Alignement: s'orienter comme les voisins
     align(boids) {
+        let perceptionRadius = this.perceptionRadius;
+
         let steering = createVector();
         let total = 0;
-
         for (let other of boids) {
             let d = dist(this.pos.x, this.pos.y, other.pos.x, other.pos.y);
-            if (other !== this && d < this.perceptionRadius) {
+            if (other != this && d < perceptionRadius) {
                 steering.add(other.vel);
                 total++;
             }
         }
-
         if (total > 0) {
             steering.div(total);
             steering.setMag(this.maxSpeed);
@@ -150,22 +111,21 @@ class Boid {
         return steering;
     }
 
-    // Séparation: éviter les collisions avec les voisins proches
     separation(boids) {
+        let perceptionRadius = this.perceptionRadius;
+
         let steering = createVector();
         let total = 0;
-        let separationRadius = this.perceptionRadius * 0.6;
 
         for (let other of boids) {
             let d = dist(this.pos.x, this.pos.y, other.pos.x, other.pos.y);
-            if (other !== this && d < separationRadius && d > 0) {
+            if (other != this && d < perceptionRadius) {
                 let diff = p5.Vector.sub(this.pos, other.pos);
-                diff.div(d * d); // Force inversement proportionnelle à la distance
+                diff.div(d * d);
                 steering.add(diff);
                 total++;
             }
         }
-
         if (total > 0) {
             steering.div(total);
             steering.setMag(this.maxSpeed);
@@ -175,22 +135,22 @@ class Boid {
         return steering;
     }
 
-    // Cohésion: se rapprocher du centre de masse du groupe
     cohesion(boids) {
+        let perceptionRadius = 2 * this.perceptionRadius;
+
         let steering = createVector();
         let total = 0;
-        let cohesionRadius = this.perceptionRadius * 2;
 
         for (let other of boids) {
             let d = dist(this.pos.x, this.pos.y, other.pos.x, other.pos.y);
-            if (other !== this && d < cohesionRadius) {
+            if (other != this && d < perceptionRadius) {
                 steering.add(other.pos);
                 total++;
             }
         }
-
         if (total > 0) {
             steering.div(total);
+
             steering.sub(this.pos);
             steering.setMag(this.maxSpeed);
             steering.sub(this.vel);
@@ -199,48 +159,73 @@ class Boid {
         return steering;
     }
 
-    // ========================================
-    // COMPORTEMENTS DE STEERING DE BASE
-    // ========================================
-
-    // Seek: se diriger vers une cible
+    // seek est une méthode qui permet de faire se rapprocher le véhicule de la cible passée en paramètre
     seek(target) {
-        let desired = p5.Vector.sub(target, this.pos);
-        desired.setMag(this.maxSpeed);
-        let steer = p5.Vector.sub(desired, this.vel);
-        steer.limit(this.maxForce);
-        return steer;
+        // on calcule la direction vers la cible
+        // C'est l'ETAPE 1 (action : se diriger vers une cible)
+        let vitesseSouhaitee = p5.Vector.sub(target, this.pos);
+
+        // Dessous c'est l'ETAPE 2 : le pilotage (comment on se dirige vers la cible)
+        // on limite ce vecteur à la longueur maxSpeed
+        vitesseSouhaitee.setMag(this.maxSpeed);
+
+        // on calcule maintenant force = desiredSpeed - currentSpeed
+        let force = p5.Vector.sub(vitesseSouhaitee, this.vel);
+
+        // et on limite cette force à maxForce
+        force.limit(this.maxForce);
+        return force;
     }
 
-    // Flee: fuir une position
     flee(target) {
-        return this.seek(target).mult(-1);
+        // inverse de seek ! 
+        let force = this.seek(target).mult(-1);
+        return force;
     }
 
-    // Pursue: prédire et poursuivre une cible mobile
-    pursue(target) {
-        // Prédiction de la position future de la cible
-        let prediction = target.vel.copy();
-        prediction.mult(10); // Prédire 10 frames dans le futur
-        let futurePos = p5.Vector.add(target.pos, prediction);
+    // Poursuite d'un point devant la target (prédiction)
+    // Cette méthode anticipe où sera la cible dans quelques frames
+    pursue(vehicle) {
+        let target = vehicle.pos.copy();
+        let prediction = vehicle.vel.copy();
+        prediction.mult(10);  // Prédire 10 frames dans le futur
+        target.add(prediction);
 
         if (Boid.debug) {
-            push();
-            stroke(255, 100, 100);
-            line(target.pos.x, target.pos.y, futurePos.x, futurePos.y);
-            fill(255, 0, 0);
-            circle(futurePos.x, futurePos.y, 10);
-            pop();
+            fill(0, 255, 0);
+            circle(target.x, target.y, 16);
         }
 
-        return this.seek(futurePos);
+        return this.seek(target);
     }
 
-    // ========================================
-    // FLEE AVEC RAYON (PANIQUE)
-    // ========================================
+    // Evade = inverse de pursue
+    evade(vehicle) {
+        let pursuit = this.pursue(vehicle);
+        pursuit.mult(-1);
+        return pursuit;
+    }
 
-    // Fuir si le danger est dans le rayon de perception
+    fleeWithTargetRadius(target) {
+        const d = this.pos.dist(target.pos);
+        let rayonZoneAFuir = target.r + 10;
+
+        if (d < rayonZoneAFuir) {
+            // On dessine le cercle de la zone à fuir
+            push();
+            stroke("red");
+            strokeWeight(2);
+            circle(target.pos.x, target.pos.y, rayonZoneAFuir * 2);
+            pop();
+
+            // je fuis la cible, on réutilise le comportement flee
+            const fleeForce = this.flee(target.pos);
+            fleeForce.mult(100);
+            this.applyForce(fleeForce);
+        }
+    }
+
+    // Fuir un danger avec un rayon de perception (extension pour le jeu)
     fleeFromDanger(danger, fleeRadius) {
         const d = this.pos.dist(danger.pos);
 
@@ -249,15 +234,12 @@ class Boid {
             let panicIncrease = map(d, 0, fleeRadius, 0.3, 0.05);
             this.panicLevel = min(1, this.panicLevel + panicIncrease);
 
-            // Calculer la force de fuite
+            // je fuis le danger
             const fleeForce = this.flee(danger.pos);
 
             // Force plus forte quand le danger est proche
             let strength = map(d, 0, fleeRadius, 8, 2);
             fleeForce.mult(strength);
-
-            // Augmenter temporairement la vitesse max en panique
-            this.vel.setMag(min(this.vel.mag() * 1.05, this.maxSpeed * 1.5));
 
             return fleeForce;
         }
@@ -272,33 +254,166 @@ class Boid {
         }
     }
 
-    // ========================================
-    // ÉVITEMENT D'OBSTACLES (Rochers)
-    // ========================================
+    wander() {
+        // point devant le véhicule, centre du cercle
 
+        let centreCercleDevant = this.vel.copy();
+        centreCercleDevant.setMag(this.distanceCercle);
+        centreCercleDevant.add(this.pos);
+
+        if (Boid.debug) {
+            // on le dessine sous la forme d'une petit cercle rouge
+            fill("red");
+            circle(centreCercleDevant.x, centreCercleDevant.y, 8);
+
+            // Cercle autour du point
+            noFill();
+            stroke("white");
+            circle(centreCercleDevant.x, centreCercleDevant.y, this.wanderRadius * 2);
+
+            // on dessine une ligne qui relie le vaisseau à ce point
+            // c'est la ligne blanche en face du vaisseau
+            line(this.pos.x, this.pos.y, centreCercleDevant.x, centreCercleDevant.y);
+        }
+
+        // On va s'occuper de calculer le point vert SUR LE CERCLE
+        // il fait un angle wanderTheta avec le centre du cercle
+        // l'angle final par rapport à l'axe des X c'est l'angle du vaisseau
+        // + cet angle
+        let wanderAngle = this.vel.heading() + this.wanderTheta;
+        // on calcule les coordonnées du point vert
+        let pointSurCercle = createVector(this.wanderRadius * cos(wanderAngle), this.wanderRadius * sin(wanderAngle));
+        // on ajoute la position du vaisseau
+        pointSurCercle.add(centreCercleDevant);
+
+        // maintenant pointSurCercle c'est un point sur le cercle
+        // on le dessine sous la forme d'un cercle vert
+        if (Boid.debug) {
+            fill("lightGreen");
+            circle(pointSurCercle.x, pointSurCercle.y, 8);
+
+            // on dessine une ligne qui va du vaisseau vers le point sur le 
+            // cercle
+            line(this.pos.x, this.pos.y, pointSurCercle.x, pointSurCercle.y);
+
+        }
+        // on dessine le vecteur desiredSpeed qui va du vaisseau au point vert
+        let desiredSpeed = p5.Vector.sub(pointSurCercle, this.pos);
+
+
+        // On a donc la vitesse désirée que l'on cherche qui est le vecteur
+        // allant du vaisseau au cercle vert. On le calcule :
+        // ci-dessous, steer c'est la desiredSpeed directement !
+        // Voir l'article de Craig Reynolds, Daniel Shiffman s'est trompé
+        // dans sa vidéo, on ne calcule pas la formule classique
+        // force = desiredSpeed - vitesseCourante, mais ici on a directement
+        // force = desiredSpeed
+        let force = p5.Vector.sub(desiredSpeed, this.vel);
+        force.setMag(this.maxForce);
+
+        // On déplace le point vert sur le cerlcle (en radians)
+        this.wanderTheta += random(-this.displaceRange, this.displaceRange);
+
+        return force;
+    }
+
+    // Permet de rester dans les limites d'une zone rectangulaire.
+    // Lorsque le véhicule s'approche d'un bord vertical ou horizontal
+    // on calcule la vitesse désirée dans la direction "réfléchie" par
+    // rapport au bord (comme au billard).
+    // Par exemple, si le véhicule s'approche du bord gauche à moins de 
+    // 25 pixels (valeur par défaut de la variable d),
+    // on calcule la vitesse désirée en gardant le x du vecteur vitesse
+    // et en mettant son y positif. x vaut maxSpeed et y vaut avant une valeur
+    // négative (puisque le véhicule va vers la gauche), on lui donne un y positif
+    // ça c'est pour la direction à prendre (vitesse désirée). Une fois la direction
+    // calculée on lui donne une norme égale à maxSpeed, puis on calcule la force
+    // normalement : force = vitesseDesiree - vitesseActuelle
+    // paramètres = un rectangle (bx, by, bw, bh) et une distance d
+    boundaries(bx, by, bw, bh, d) {
+        let vitesseDesiree = null;
+
+        const xBordGauche = bx + d;
+        const xBordDroite = bx + bw - d;
+        const yBordHaut = by + d;
+        const yBordBas = by + bh - d;
+
+        // si le véhicule est trop à gauche ou trop à droite
+        if (this.pos.x < xBordGauche) {
+            // 
+            vitesseDesiree = createVector(this.maxSpeed, this.vel.y);
+        } else if (this.pos.x > xBordDroite) {
+            vitesseDesiree = createVector(-this.maxSpeed, this.vel.y);
+        }
+
+        if (this.pos.y < yBordHaut) {
+            vitesseDesiree = createVector(this.vel.x, this.maxSpeed);
+        } else if (this.pos.y > yBordBas) {
+            vitesseDesiree = createVector(this.vel.x, -this.maxSpeed);
+        }
+
+        if (vitesseDesiree !== null) {
+            vitesseDesiree.setMag(this.maxSpeed);
+            const force = p5.Vector.sub(vitesseDesiree, this.vel);
+            force.limit(this.maxForce);
+            return force;
+        }
+
+        if (Boid.debug) {
+            // dessin du cadre de la zone
+            push();
+
+            noFill();
+            stroke("white");
+            rect(bx, by, bw, bh);
+
+            // et du rectangle intérieur avec une bordure rouge de d pixels
+            stroke("red");
+            rect(bx + d, by + d, bw - 2 * d, bh - 2 * d);
+
+            pop();
+        }
+
+        // si on est pas près du bord (vitesse désirée nulle), on renvoie un vecteur nul
+        return createVector(0, 0);
+    }
+
+    getVehiculeLePlusProche(vehicules) {
+        let plusPetiteDistance = Infinity;
+        let vehiculeLePlusProche;
+
+        vehicules.forEach(v => {
+            if (v != this) {
+                // Je calcule la distance entre le vaisseau et le vehicule
+                const distance = this.pos.dist(v.pos);
+                if (distance < plusPetiteDistance) {
+                    plusPetiteDistance = distance;
+                    vehiculeLePlusProche = v;
+                }
+            }
+        });
+
+        return vehiculeLePlusProche;
+    }
+
+    // Évitement d'obstacles (extension pour le jeu)
     avoidObstacles(obstacles) {
         let totalForce = createVector();
 
         for (let obstacle of obstacles) {
             let d = this.pos.dist(obstacle.pos);
-            let avoidRadius = obstacle.r + 40; // Marge de sécurité
+            let avoidRadius = obstacle.r + 40;
 
             if (d < avoidRadius) {
-                // Direction opposée à l'obstacle
                 let away = p5.Vector.sub(this.pos, obstacle.pos);
                 away.normalize();
-
-                // Force inversement proportionnelle à la distance
                 let strength = map(d, 0, avoidRadius, 5, 0.5);
                 away.mult(strength);
-
                 totalForce.add(away);
 
-                // Collision dure: téléporter hors de l'obstacle
                 if (d < obstacle.r + this.r) {
                     away.setMag(obstacle.r + this.r - d + 5);
                     this.pos.add(away);
-                    // Inverser partiellement la vélocité
                     this.vel.mult(-0.5);
                 }
             }
@@ -307,173 +422,55 @@ class Boid {
         return totalForce;
     }
 
-    // ========================================
-    // WANDER (Comportement naturel du requin)
-    // ========================================
-
-    wander() {
-        // Cercle de wander devant l'agent
-        let centreCercle = this.vel.copy();
-        centreCercle.setMag(this.distanceCercle);
-        centreCercle.add(this.pos);
-
-        if (Boid.debug) {
-            push();
-            fill(255, 0, 0);
-            circle(centreCercle.x, centreCercle.y, 8);
-            noFill();
-            stroke(255, 255, 255, 100);
-            circle(centreCercle.x, centreCercle.y, this.wanderRadius * 2);
-            stroke(255, 255, 0);
-            line(this.pos.x, this.pos.y, centreCercle.x, centreCercle.y);
-            pop();
-        }
-
-        // Point sur le cercle
-        let wanderAngle = this.vel.heading() + this.wanderTheta;
-        let pointSurCercle = createVector(
-            this.wanderRadius * cos(wanderAngle),
-            this.wanderRadius * sin(wanderAngle)
-        );
-        pointSurCercle.add(centreCercle);
-
-        if (Boid.debug) {
-            push();
-            fill(0, 255, 0);
-            circle(pointSurCercle.x, pointSurCercle.y, 8);
-            stroke(0, 255, 0);
-            line(this.pos.x, this.pos.y, pointSurCercle.x, pointSurCercle.y);
-            pop();
-        }
-
-        // Force vers le point
-        let desired = p5.Vector.sub(pointSurCercle, this.pos);
-        let steer = p5.Vector.sub(desired, this.vel);
-        steer.setMag(this.maxForce);
-
-        // Variation aléatoire de l'angle
-        this.wanderTheta += random(-this.displaceRange, this.displaceRange);
-
-        return steer;
-    }
-
-    // ========================================
-    // LIMITES DE L'ENVIRONNEMENT
-    // ========================================
-
-    boundaries() {
-        let desired = null;
-        const d = this.boundariesDistance;
-        const bx = this.boundariesX;
-        const by = this.boundariesY;
-        const bw = this.boundariesWidth;
-        const bh = this.boundariesHeight;
-
-        if (this.pos.x < bx + d) {
-            desired = createVector(this.maxSpeed, this.vel.y);
-        } else if (this.pos.x > bx + bw - d) {
-            desired = createVector(-this.maxSpeed, this.vel.y);
-        }
-
-        if (this.pos.y < by + d) {
-            desired = createVector(this.vel.x, this.maxSpeed);
-        } else if (this.pos.y > by + bh - d) {
-            desired = createVector(this.vel.x, -this.maxSpeed);
-        }
-
-        if (desired !== null) {
-            desired.setMag(this.maxSpeed);
-            let steer = p5.Vector.sub(desired, this.vel);
-            steer.limit(this.maxForce);
-            return steer;
-        }
-
-        return createVector(0, 0);
-    }
-
-    // Rebond dur aux bords
-    edges() {
-        if (this.pos.x > width) this.pos.x = width;
-        else if (this.pos.x < 0) this.pos.x = 0;
-        if (this.pos.y > height) this.pos.y = height;
-        else if (this.pos.y < 0) this.pos.y = 0;
-    }
-
-    // ========================================
-    // UTILITAIRES
-    // ========================================
-
-    // Trouver le boid le plus proche
-    getClosest(boids) {
-        let minDist = Infinity;
-        let closest = null;
-
-        for (let b of boids) {
-            if (b !== this) {
-                let d = this.pos.dist(b.pos);
-                if (d < minDist) {
-                    minDist = d;
-                    closest = b;
-                }
-            }
-        }
-
-        return closest;
-    }
 
     applyForce(force) {
         this.acc.add(force);
     }
 
     update() {
+        this.pos.add(this.vel);
         this.vel.add(this.acc);
         this.vel.limit(this.maxSpeed);
-        this.pos.add(this.vel);
         this.acc.mult(0);
 
-        // Retour progressif au calme
+        // Mise à jour du niveau de panique
         this.updatePanic();
     }
 
     show() {
-        push();
-        translate(this.pos.x, this.pos.y);
-        rotate(this.vel.heading());
-
-        if (this.image) {
+        if (this.image !== undefined) {
             imageMode(CENTER);
-            // Rotation supplémentaire pour l'image (face à droite)
-            //rotate(PI);
-            image(this.image, 0, 0, this.r, this.r);
-        } else {
-            // Triangle par défaut avec couleur selon panique
-            let panicColor = lerpColor(
-                this.color || color(100, 200, 255),
-                color(255, 100, 100),
-                this.panicLevel
-            );
-            fill(panicColor);
-            stroke(255, 150);
-            strokeWeight(1);
-            triangle(-this.r, -this.r / 2, -this.r, this.r / 2, this.r, 0);
-        }
 
-        pop();
-
-        // Affichage debug
-        if (Boid.debug) {
+            // On regarde la direction dans laquelle le boid va :
             push();
-            noFill();
-            stroke(100, 200, 255, 50);
-            ellipse(this.pos.x, this.pos.y, this.perceptionRadius * 2);
+            translate(this.pos.x, this.pos.y);
 
-            // Indicateur de panique
-            if (this.panicLevel > 0.1) {
-                fill(255, 0, 0, this.panicLevel * 100);
-                noStroke();
-                ellipse(this.pos.x, this.pos.y - this.r, 5);
-            }
+            // Rotation selon la direction du mouvement + offset selon l'image
+            rotate(this.vel.heading() + this.imageRotationOffset);
+
+            image(this.image, 0, 0, this.r, this.r);
+
             pop();
+
+            return;
+        } else {
+            strokeWeight(this.r);
+            stroke(255);
+            point(this.pos.x, this.pos.y);
         }
     }
+
+    edges() {
+        if (this.pos.x > width) {
+            this.pos.x = 0;
+        } else if (this.pos.x < 0) {
+            this.pos.x = width;
+        }
+        if (this.pos.y > height) {
+            this.pos.y = 0;
+        } else if (this.pos.y < 0) {
+            this.pos.y = height;
+        }
+    }
+
 }
