@@ -9,6 +9,14 @@
   </p>
 </div>
 
+<div align="center">
+  <h3>🚀 <a href="https://ayamoughit.github.io/shark_game/">JOUER À LA DÉMO EN LIGNE</a> 🚀</h3>
+  <p>(La version hébergée sur GitHub Pages est disponible ici : <a href="https://ayamoughit.github.io/shark_game/">https://ayamoughit.github.io/shark_game/</a>)</p>
+
+  <h3>📺 <a href="https://youtu.be/8O0bICrAJOM">VOIR LA DÉMONSTRATION VIDÉO</a> 📺</h3>
+  <p>(La vidéo de démonstration est disponible ici : <a href="https://youtu.be/8O0bICrAJOM">https://youtu.be/8O0bICrAJOM</a>)</p>
+</div>
+
 ### 📝 Présentation du Projet
 Ce projet est une simulation interactive basée sur les principes de **Vie Artificielle** et de **Comportements Réactifs**. Il met en scène un écosystème marin où un prédateur (le Requin) chasse des proies (les Poissons) qui tentent de survivre en groupe.
 
@@ -86,7 +94,7 @@ Dans quel fichier reconnu automatiquement par antigravity puis-je spécifier ces
 
 ### 🏆 Ce dont nous sommes le plus fiers
 
-1.  **L'Immersion Visuelle** : L'ajout de l'animation de "coup de dent" (`snap`) du requin et du nuage de sang (`particles.js`) rend l'action satisfaisante et viscérale ("Game Feel").
+1.  **L'Immersion Visuelle** : L'ajout de l'animation de "coup de dent" (`snap`) du requin, du nuage de sang (`particles.js`) et du **clignotement rouge de l'écran** lorsque le temps est presque écoulé (10 dernières secondes) rend l'action satisfaisante et viscérale ("Game Feel").
 2.  **La Robustesse du Code** : Avoir réussi à faire cohabiter un **jeu d'arcade** (vies, score, combos, game over) avec une **simulation de vie artificielle** rigoureuse (Boids, Steering Behaviors) sans "tricher" sur la physique ou les vecteurs. Les agents se déplacent vraiment selon les lois de Reynolds, même quand le joueur joue.
 
 ### ⚠️ Difficultés Rencontrées
