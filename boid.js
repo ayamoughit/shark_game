@@ -162,22 +162,30 @@ class Boid {
         return steering;
     }
 
-    // seek est une méthode qui permet de faire se rapprocher le véhicule de la cible passée en paramètre
     seek(target) {
-        // on calcule la direction vers la cible
-        // C'est l'ETAPE 1 (action : se diriger vers une cible)
-        let vitesseSouhaitee = p5.Vector.sub(target, this.pos);
+        let desired = p5.Vector.sub(target, this.pos);
+        desired.setMag(this.maxSpeed);
+        let steer = p5.Vector.sub(desired, this.vel);
+        steer.limit(this.maxForce);
+        return steer;
+    }
 
-        // Dessous c'est l'ETAPE 2 : le pilotage (comment on se dirige vers la cible)
-        // on limite ce vecteur à la longueur maxSpeed
-        vitesseSouhaitee.setMag(this.maxSpeed);
+    arrive(target) {
+        let desired = p5.Vector.sub(target, this.pos);
+        let d = desired.mag();
 
-        // on calcule maintenant force = desiredSpeed - currentSpeed
-        let force = p5.Vector.sub(vitesseSouhaitee, this.vel);
+        // Rayon d'arrivée (ralentissement pour s'arrêter doucement)
+        // Rayon d'arrivée (ralentissement pour s'arrêter doucement)
+        if (d < 10) { // Réduit de 100 à 10 pour qu'il "colle" plus à la souris
+            let m = map(d, 0, 10, 0, this.maxSpeed);
+            desired.setMag(m);
+        } else {
+            desired.setMag(this.maxSpeed);
+        }
 
-        // et on limite cette force à maxForce
-        force.limit(this.maxForce);
-        return force;
+        let steer = p5.Vector.sub(desired, this.vel);
+        steer.limit(this.maxForce);
+        return steer;
     }
 
     flee(target) {
@@ -490,6 +498,71 @@ class Boid {
         }
     }
 
+    /**
+     * PATH FOLLOWING (Suivi de chemin)
+     * ───────────────────────────────
+     * Algorithme de Reynolds:
+     * 1. Prédire la position future
+     * 2. Trouver la projection sur le chemin
+     * 3. Si trop loin, se diriger vers le chemin
+     */
+    follow(path) {
+        // Prédiction de la position future
+        let predict = this.vel.copy();
+        predict.normalize();
+        predict.mult(25); // Look ahead
+        let predictLoc = p5.Vector.add(this.pos, predict);
+
+        let worldRecord = 1000000;
+        let target = null;
+        let normal = null;
+
+        // Trouver le segment le plus proche
+        for (let i = 0; i < path.points.length - 1; i++) {
+            let a = path.points[i];
+            let b = path.points[i + 1];
+
+            // Point normal sur le segment
+            let normalPoint = this.getNormalPoint(predictLoc, a, b);
+
+            // Gérer le cas où le point normal est hors du segment
+            if (normalPoint.x < min(a.x, b.x) || normalPoint.x > max(a.x, b.x) ||
+                normalPoint.y < min(a.y, b.y) || normalPoint.y > max(a.y, b.y)) {
+                normalPoint = b.copy();
+            }
+
+            let distance = p5.Vector.dist(predictLoc, normalPoint);
+
+            if (distance < worldRecord) {
+                worldRecord = distance;
+                normal = normalPoint;
+
+                // Cible devant sur le chemin
+                let dir = p5.Vector.sub(b, a);
+                dir.normalize();
+                dir.mult(25); // Target ahead distance
+                target = p5.Vector.add(normalPoint, dir);
+            }
+        }
+
+        // Si on est dans le chemin, pas de force
+        if (worldRecord > path.radius) {
+            return this.seek(target);
+        } else {
+            return createVector(0, 0);
+        }
+    }
+
+    // Helper pour trouver la projection normale sur un segment
+    getNormalPoint(p, a, b) {
+        let ap = p5.Vector.sub(p, a);
+        let ab = p5.Vector.sub(b, a);
+        ab.normalize();
+        ab.mult(ap.dot(ab));
+        let normalPoint = p5.Vector.add(a, ab);
+        return normalPoint;
+    }
+
     // Trouver l'obstacle le plus proche
     getObstacleLePlusProche(obstacles) {
         let plusPetiteDistance = 100000000;
@@ -521,6 +594,67 @@ class Boid {
     }
 
 
+    /**
+     * PATH FOLLOWING (Suivi de chemin) - Optionnel mais présent pour respecter le code du prof
+     * Algorithme de Reynolds
+     */
+    follow(path) {
+        // Prédiction de la position future
+        let predict = this.vel.copy();
+        predict.normalize();
+        predict.mult(25); // Look ahead
+        let predictLoc = p5.Vector.add(this.pos, predict);
+
+        let worldRecord = 1000000;
+        let target = null;
+        let normal = null;
+
+        // Trouver le segment le plus proche
+        for (let i = 0; i < path.points.length - 1; i++) {
+            let a = path.points[i];
+            let b = path.points[i + 1];
+
+            // Point normal sur le segment
+            let normalPoint = this.getNormalPoint(predictLoc, a, b);
+
+            // Gérer le cas où le point normal est hors du segment
+            if (normalPoint.x < min(a.x, b.x) || normalPoint.x > max(a.x, b.x) ||
+                normalPoint.y < min(a.y, b.y) || normalPoint.y > max(a.y, b.y)) {
+                normalPoint = b.copy();
+            }
+
+            let distance = p5.Vector.dist(predictLoc, normalPoint);
+
+            if (distance < worldRecord) {
+                worldRecord = distance;
+                normal = normalPoint;
+
+                // Cible devant sur le chemin
+                let dir = p5.Vector.sub(b, a);
+                dir.normalize();
+                dir.mult(25); // Target ahead distance
+                target = p5.Vector.add(normalPoint, dir);
+            }
+        }
+
+        // Si on est dans le chemin (avec marge), pas de force
+        if (worldRecord > path.radius) {
+            return this.seek(target);
+        } else {
+            return createVector(0, 0);
+        }
+    }
+
+    // Helper pour trouver la projection normale sur un segment
+    getNormalPoint(p, a, b) {
+        let ap = p5.Vector.sub(p, a);
+        let ab = p5.Vector.sub(b, a);
+        ab.normalize();
+        ab.mult(ap.dot(ab));
+        let normalPoint = p5.Vector.add(a, ab);
+        return normalPoint;
+    }
+
     applyForce(force) {
         this.acc.add(force);
     }
@@ -543,17 +677,26 @@ class Boid {
             push();
             translate(this.pos.x, this.pos.y);
 
-            // Rotation selon la direction du mouvement + offset selon l'image
-            rotate(this.vel.heading() + this.imageRotationOffset);
+            // CORRECTION SENS : Flip Horizontal simple
+            // On suppose que l'image de base regarde vers la DROITE
+            if (this.vel.x < 0) {
+                scale(-1, 1); // Miroir horizontal
+            }
 
-            // Appliquer la teinte si définie (pour les sous-classes)
+            // On peut ajouter une légère rotation pour le "tangage" (climb/dive)
+            // mais on limite pour éviter le retournement
+            let tilt = atan2(this.vel.y, abs(this.vel.x));
+            rotate(tilt);
+
+            // Appliquer le tint si défini (pour les classes enfants)
             if (this.tint) {
                 tint(this.tint);
             }
 
+            // Dessiner l'image
             image(this.image, 0, 0, this.r, this.r);
 
-            // Retirer la teinte après le dessin
+            // Réinitialiser le tint
             if (this.tint) {
                 noTint();
             }
@@ -579,6 +722,121 @@ class Boid {
         } else if (this.pos.y < 0) {
             this.pos.y = height;
         }
+    }
+
+    // Méthode avoid du prof
+    avoid(obstacles) {
+        // calcul d'un vecteur ahead devant le véhicule
+        // il regarde par exemple 50 frames devant lui
+        let ahead = this.vel.copy();
+        ahead.mult(30);
+        //on calcue ahead2 deux fois plus petit
+        let ahead2 = ahead.copy();
+        ahead2.mult(0.5);
+
+        if (Boid.debug) {
+            // on le dessine avec ma méthode this.drawVector(pos vecteur, color)
+            this.drawVector(this.pos, ahead, "yellow");
+        }
+
+        // Calcul des coordonnées du point au bout de ahead
+        let pointAuBoutDeAhead = this.pos.copy().add(ahead);
+        let pointAuBoutDeAhead2 = this.pos.copy().add(ahead2);
+
+        // Detection de l'obstacle le plus proche
+        let obstacleLePlusProche = this.getObstacleLePlusProche(obstacles);
+
+        // Si pas d'obstacle, on renvoie un vecteur nul
+        if (obstacleLePlusProche == undefined) {
+            return createVector(0, 0);
+        }
+
+        // On calcule la distance entre le cercle et le bout du vecteur ahead
+        let distance1 = pointAuBoutDeAhead.dist(obstacleLePlusProche.pos);
+        let distance2 = pointAuBoutDeAhead2.dist(obstacleLePlusProche.pos);
+        let distance = min(distance1, distance2);
+
+        if (Boid.debug) {
+            // On dessine le point au bout du vecteur ahead pour debugger
+            fill("red");
+            circle(pointAuBoutDeAhead.x, pointAuBoutDeAhead.y, 10);
+            fill("blue");
+            circle(pointAuBoutDeAhead2.x, pointAuBoutDeAhead2.y, 10);
+
+            // On dessine la zone d'évitement
+            // Pour cela on trace une ligne large qui va de la position du vaisseau
+            // jusqu'au point au bout de ahead
+            push();
+            stroke(100, 100);
+            strokeWeight(this.largeurZoneEvitementDevantVaisseau);
+            line(this.pos.x, this.pos.y, pointAuBoutDeAhead.x, pointAuBoutDeAhead.y);
+            pop();
+        }
+        // si la distance est < rayon de l'obstacle
+        // il y a collision possible et on dessine l'obstacle en rouge
+
+        if (distance < obstacleLePlusProche.r + this.largeurZoneEvitementDevantVaisseau) {
+            // collision possible 
+
+            // calcul de la force d'évitement. C'est un vecteur qui va
+            // du centre de l'obstacle vers le point au bout du vecteur ahead
+            let force;
+            if (distance1 < distance2) {
+                force = p5.Vector.sub(pointAuBoutDeAhead, obstacleLePlusProche.pos);
+            } else {
+                force = p5.Vector.sub(pointAuBoutDeAhead2, obstacleLePlusProche.pos);
+            }
+            if (Boid.debug) {
+                // on le dessine en jaune pour vérifier qu'il est ok (dans le bon sens etc)
+                this.drawVector(obstacleLePlusProche.pos, force, "yellow");
+            }
+            // Dessous c'est l'ETAPE 2 : le pilotage (comment on se dirige vers la cible)
+            // on limite ce vecteur à la longueur maxSpeed
+            // force est la vitesse désirée
+            force.setMag(this.maxSpeed);
+            // on calcule la force à appliquer pour atteindre la cible avec la formule
+            // que vous commencez à connaitre : force = vitesse désirée - vitesse courante
+            force.sub(this.vel);
+            // on limite cette force à la longueur maxForce
+            force.limit(this.maxForce / 2);
+            return force;
+        } else {
+            // pas de collision possible
+            return createVector(0, 0);
+        }
+    }
+
+    getObstacleLePlusProche(obstacles) {
+        let plusPetiteDistance = 100000000;
+        let obstacleLePlusProche = undefined;
+
+        obstacles.forEach(o => {
+            // Je calcule la distance entre le vaisseau et l'obstacle
+            const distance = this.pos.dist(o.pos);
+
+            if (distance < plusPetiteDistance) {
+                plusPetiteDistance = distance;
+                obstacleLePlusProche = o;
+            }
+        });
+
+        return obstacleLePlusProche;
+    }
+
+    drawVector(pos, v, color) {
+        push();
+        // Dessin du vecteur vitesse
+        // Il part du centre du véhicule et va dans la direction du vecteur vitesse
+        strokeWeight(3);
+        stroke(color);
+        line(pos.x, pos.y, pos.x + v.x, pos.y + v.y);
+        // dessine une petite fleche au bout du vecteur vitesse
+        let arrowSize = 5;
+        translate(pos.x + v.x, pos.y + v.y);
+        rotate(v.heading());
+        translate(-arrowSize / 2, 0);
+        triangle(0, arrowSize / 2, 0, -arrowSize / 2, arrowSize, 0);
+        pop();
     }
 
 }

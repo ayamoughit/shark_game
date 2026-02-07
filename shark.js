@@ -44,6 +44,56 @@ class Shark extends Boid {
 
         // Image du requin pointe vers la droite
         this.imageRotationOffset = 0;
+
+        this.eatAnim = 0; // Timer pour l'animation de manger
+    }
+
+    show() {
+        push();
+        translate(this.pos.x, this.pos.y);
+
+        // Effet "Manger" (Scale up/down simple)
+        // Effet "Manger" (Snap / Morsure vive)
+        let scaleX = 1;
+        let scaleY = 1;
+
+        if (this.eatAnim > 0) {
+            // Animation en 2 temps : Ouvre la gueule (10 frames) -> Ferme (10 frames)
+            let progress = this.eatAnim / 20; // De 1.0 à 0.0
+
+            if (progress > 0.5) {
+                // Phase 1 : Ouvre / Lunge avant
+                scaleX = 1.4; // S'étire encore plus
+                scaleY = 0.7; // S'aplatit
+            } else {
+                // Phase 2 : Croque / Impact
+                scaleX = 1.0;
+                scaleY = 1.3; // Gonfle sous l'impact
+            }
+            this.eatAnim--;
+        }
+
+        // Orientation
+        if (this.vel.x < 0) {
+            scale(-1 * scaleX, 1 * scaleY);
+            rotate(-this.vel.heading() + PI);
+        } else {
+            scale(1 * scaleX, 1 * scaleY);
+            rotate(this.vel.heading());
+        }
+
+        // Dessin (Image ou Forme)
+        if (this.image) {
+            imageMode(CENTER);
+            image(this.image, 0, 0, this.r * 2.5, this.r * 2.5); // Requin plus grand
+        } else {
+            // Dessin triangle simple si pas d'image
+            fill(this.color);
+            noStroke();
+            triangle(-this.r, -this.r / 2, -this.r, this.r / 2, this.r, 0);
+        }
+
+        pop();
     }
 
     /**

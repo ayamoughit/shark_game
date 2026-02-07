@@ -7,14 +7,19 @@
 // === ÉTAT DU JEU ===
 let gameState = "start";
 let difficulty = "normal";
+let gameMode = "manual"; // "manual" (Jouer) ou "auto" (Regarder)
 
 // === AGENTS ===
 let flock = [];
+let creatures = [];
+let hazards = []; // Barrels
 let shark = null;
 let obstacles = [];
+let gamePath;
 
-// === IMAGES ===
+// === IMAGES & SONS ===
 let fishImage, sharkImage;
+let soundBg, soundEat, soundRoar, soundSplash, soundBubbles;
 
 // === PARAMÈTRES DYNAMIQUES ===
 let SHARK_DETECTION_RADIUS;
@@ -25,6 +30,7 @@ let GAME_DURATION;
 
 // === SCORE & SYSTÈME ===
 let score = 0;
+let sharkLives = 3; // 3 Vies (Cœurs)
 let highScores = { easy: 0, normal: 0, hard: 0 };
 let fishEaten = 0;
 let combo = 0;
@@ -77,12 +83,37 @@ let decorInitialized = false;
 function preload() {
     fishImage = loadImage('assets/fish.png');
     sharkImage = loadImage('assets/shark.png');
+
+    // Chargement des sons - Sécurisé
+    if (window.loadSound) {
+        soundBg = loadSound('assets/freesound_community-rekintudu-27867.mp3');
+        soundEat = loadSound('assets/gsmsea-megalodon-snarl-burst-deep-433588.mp3');
+        soundRoar = loadSound('assets/dragon-studio-deep-sea-monster-roar-329857.mp3');
+        soundSplash = loadSound('assets/creatorshome-shake-water-329197.mp3');
+        soundBubbles = loadSound('assets/soundshmyak-loop-air-bubbles-159283.mp3');
+    } else {
+        console.warn("p5.sound library not loaded correctly - sounds disabled");
+    }
 }
 
 function setup() {
     createCanvas(windowWidth, windowHeight);
     textFont('Arial');
     loadHighScores();
+
+    // Démarrer la musique de fond avec une interaction utilisateur implicite (première fois)
+    if (typeof userStartAudio !== 'undefined' && soundBg) {
+        userStartAudio().then(() => {
+            if (soundBg && !soundBg.isPlaying()) {
+                soundBg.setVolume(0.4);
+                soundBg.loop();
+            }
+            if (soundBubbles && !soundBubbles.isPlaying()) {
+                soundBubbles.setVolume(0.2);
+                soundBubbles.loop();
+            }
+        }).catch(e => console.log("Audio not started yet:", e));
+    }
 }
 
 function loadHighScores() {
@@ -109,21 +140,21 @@ function setDifficulty(level) {
         case "easy":
             SHARK_DETECTION_RADIUS = 150;
             SHARK_HUNT_RADIUS = 200;
-            SHARK_EAT_DISTANCE = 40;
+            SHARK_EAT_DISTANCE = 25; // Réduit pour contact direct
             FISH_SPAWN_COUNT = 40;
             GAME_DURATION = 90;
             break;
         case "normal":
             SHARK_DETECTION_RADIUS = 200;
             SHARK_HUNT_RADIUS = 300;
-            SHARK_EAT_DISTANCE = 50;
+            SHARK_EAT_DISTANCE = 25; // Réduit
             FISH_SPAWN_COUNT = 30;
             GAME_DURATION = 60;
             break;
         case "hard":
             SHARK_DETECTION_RADIUS = 250;
             SHARK_HUNT_RADIUS = 400;
-            SHARK_EAT_DISTANCE = 60;
+            SHARK_EAT_DISTANCE = 30; // Un peu plus grand en hard pour aider ? Non gardons serré.
             FISH_SPAWN_COUNT = 20;
             GAME_DURATION = 45;
             break;
@@ -135,13 +166,27 @@ function setDifficulty(level) {
 // ========================================
 
 function initSimulation() {
+    setDifficulty(difficulty); // Ensure constants (Radius, Spawns) are set!
     flock = [];
+    creatures = [];
+    hazards = [];
     obstacles = [];
     particles = [];
     floatingTexts = [];
+    gamePath = new Path();
+
+    // Créer un chemin circulaire/complexe
+    let offset = 100;
+    gamePath.addPoint(offset, offset);
+    gamePath.addPoint(width - offset, offset);
+    gamePath.addPoint(width - offset, height - offset);
+    gamePath.addPoint(offset, height - offset);
+    gamePath.addPoint(offset, offset); // Boucler le chemin
+
     powerUps = [];
     sharkTrail = [];
     score = 0;
+    sharkLives = 3; // Reset lives
     fishEaten = 0;
     goldenFishEaten = 0;
     combo = 0;
@@ -171,6 +216,16 @@ function initSimulation() {
         spawnFish(random(100, width - 100), random(100, height - 150));
     }
 
+    // Ajouter des Tortues (3)
+    for (let i = 0; i < 3; i++) {
+        creatures.push(new Turtle(random(width), random(height)));
+    }
+
+    // Ajouter des Crabes (5) au fond
+    for (let i = 0; i < 5; i++) {
+        creatures.push(new Crab(random(width), height - 20));
+    }
+
     // Ajouter quelques obstacles initiaux
     for (let i = 0; i < 3; i++) {
         obstacles.push(new Obstacle(random(200, width - 200), random(200, height - 200), random(40, 70)));
@@ -178,12 +233,28 @@ function initSimulation() {
 }
 
 function spawnFish(x, y, isGolden = false) {
-    const fish = new Boid(x, y, fishImage);
-    fish.r = random(35, 55);
-    fish.maxSpeed = random(4.5, 6.5);
-    fish.perceptionRadius = random(60, 90);
+    let fish;
+    let fishType = random();
+
+    // 20% de chance d'être un SwiftFish (rapide)
+    // 15% de chance d'être un TankFish (gros et lent)
+    // 65% de chance d'être un poisson normal
+    if (fishType < 0.20) {
+        fish = new SwiftFish(x, y, fishImage);
+    } else if (fishType < 0.35) {
+        fish = new TankFish(x, y, fishImage);
+    } else if (fishType < 0.50) { // 15% Spiny Fish
+        fish = new SpinyFish(x, y, fishImage);
+    } else {
+        fish = new Boid(x, y, fishImage);
+        fish.r = random(35, 55);
+        fish.maxSpeed = random(4.5, 6.5);
+        fish.perceptionRadius = random(60, 90);
+    }
+
     fish.fleeRadius = SHARK_DETECTION_RADIUS;
     fish.isGolden = isGolden || random() < 0.08;  // 8% de chance d'être doré
+
     flock.push(fish);
     totalFishSpawned++;
 }
@@ -211,6 +282,12 @@ function draw() {
     switch (gameState) {
         case "start":
             drawStartScreen();
+            // Petite astuce pour démarrer l'audio au clic sur Start
+            if (mouseIsPressed && soundBg && !soundBg.isPlaying()) {
+                if (typeof userStartAudio !== 'undefined') userStartAudio().catch(e => { });
+                if (soundBg.isLoaded()) soundBg.loop();
+                if (soundBubbles && soundBubbles.isLoaded()) soundBubbles.loop();
+            }
             break;
         case "playing":
             updateGame();
@@ -292,17 +369,39 @@ function drawGame() {
     for (let obs of obstacles) {
         obs.show();
     }
-    obstacleSouris.show();
+    // "le truc rond en green" (Obstacle souris) : On le cache en mode manuel
+    if (gameMode !== "manual") {
+        obstacleSouris.show();
+    }
 
     // Power-ups
     drawPowerUps();
 
     updateFish();
+    updateCreatures();
+    updateHazards(); // Barrels restored
     updateShark();
     updateParticles();
     updateFloatingTexts();
 
     pop();
+
+    // Effet "Temps Écoulé" (Rouge clignotant)
+    if (gameTime <= 10 && gameTime > 0) {
+        push();
+        let pulse = map(sin(frameCount * 0.2), -1, 1, 50, 150);
+        fill(255, 0, 0, pulse);
+        noStroke();
+        rect(0, 0, width, height);
+
+        // Texte géant
+        textAlign(CENTER, CENTER);
+        textSize(150);
+        textStyle(BOLD);
+        fill(255, 255, 255, 200);
+        text(gameTime, width / 2, height / 2);
+        pop();
+    }
 
     drawUI();
 }
@@ -415,17 +514,50 @@ function updateFish() {
 
         fish.flock(flock);
 
-        // Si power-up aimant, attirer vers le requin
         if (activePowerUp === 'magnet') {
             let attract = p5.Vector.sub(shark.pos, fish.pos);
             attract.setMag(0.5);
             fish.applyForce(attract);
         } else {
+            // MODE AUTO (ACADÉMIQUE) : Suivre le chemin
+            if (gameMode === "auto") {
+                let pathForce = fish.follow(gamePath);
+                pathForce.mult(2);
+                fish.applyForce(pathForce);
+            } else {
+                // MODE JOUER ("Pas de truc qui les sort")
+                // Les poissons nagent librement (Wander) + restent dans l'écran
+                let wander = fish.wander ? fish.wander() : createVector(0, 0); // Si wander existe
+                wander.mult(0.5);
+                fish.applyForce(wander);
+
+                // Force de confinement douce pour qu'ils restent un peu au centre
+                let center = createVector(width / 2, height / 2);
+                let distToCenter = p5.Vector.dist(fish.pos, center);
+                if (distToCenter > width * 0.4) {
+                    let returnForce = p5.Vector.sub(center, fish.pos);
+                    returnForce.setMag(0.05);
+                    fish.applyForce(returnForce);
+                }
+            }
+
+            // Fuite si danger (REQUIN)
             let fleeForce = fish.fleeFromDanger(shark, SHARK_DETECTION_RADIUS);
+
+            // NERF (Affaiblissement) de la fuite en mode JOUER pour qu'on puisse les attraper
+            if (gameMode === "manual") {
+                fleeForce.mult(0.2); // Fuite très faible, presque nulle
+            } else {
+                fleeForce.mult(1.5); // Fuite normale en mode AI
+            }
+
             fish.applyForce(fleeForce);
         }
 
-        fish.fleeFromDanger(obstacleSouris, obstacleSouris.r + 40);
+        // Fuite de l'obstacle souris (SEULEMENT si pas mode manuel)
+        if (gameMode !== "manual") {
+            fish.fleeFromDanger(obstacleSouris, obstacleSouris.r + 40);
+        }
 
         for (let obs of obstacles) {
             let avoidForce = obs.getRepulsionForce(fish);
@@ -520,15 +652,9 @@ function updateShark() {
         }
     }
 
-    // Wander
-    let wanderForce = shark.wander();
-    wanderForce.mult(0.8);
-    shark.applyForce(wanderForce);
-
-    // Chasse
+    // 1. D'abord, on cherche une cible (comme "avant")
+    let target = null;
     if (flock.length > 0) {
-        // Priorité aux poissons dorés
-        let target = null;
         let closestGolden = null;
         let closestNormal = null;
         let minGoldenDist = Infinity;
@@ -544,35 +670,86 @@ function updateShark() {
                 closestNormal = fish;
             }
         }
-
         target = (closestGolden && minGoldenDist < SHARK_HUNT_RADIUS * 1.5) ? closestGolden : closestNormal;
+    }
 
-        if (target) {
-            let distToFish = shark.pos.dist(target.pos);
+    // 2. Comportement de base (Errance)
+    let wanderForce = shark.wander();
+    wanderForce.mult(0.8);
+    shark.applyForce(wanderForce);
 
-            if (distToFish < SHARK_HUNT_RADIUS) {
-                let pursueForce = shark.pursue(target);
-                let strength = map(distToFish, 0, SHARK_HUNT_RADIUS, 5, 1);
-                pursueForce.mult(strength);
-                shark.applyForce(pursueForce);
+    // 3. Logique de contrôle (HYBRIDE INTELLIGENTE)
+    let isHunting = false;
 
-                // Ligne de chasse stylée
-                push();
-                let lineColor = target.isGolden ? color(255, 215, 0) : color(255, 50, 50);
-                stroke(lineColor);
-                strokeWeight(2);
-                drawingContext.setLineDash([8, 8]);
-                line(shark.pos.x, shark.pos.y, target.pos.x, target.pos.y);
-                drawingContext.setLineDash([]);
+    // Si on a une cible PROCHE (< rayon de chasse), l'instinct prend le dessus !
+    // EN MODE MANUEL : On réduit drastiquement ce rayon pour laisser le contrôle au joueur (150px)
+    // EN MODE AUTO : On garde le grand rayon (SHARK_HUNT_RADIUS)
+    let triggerDistance = (gameMode === "manual") ? 150 : SHARK_HUNT_RADIUS;
 
-                // Indicateur de cible
-                noFill();
-                stroke(lineColor);
-                strokeWeight(2);
-                let pulseSize = 30 + sin(frameCount * 0.15) * 10;
-                ellipse(target.pos.x, target.pos.y, pulseSize);
-                pop();
+    if (target && shark.pos.dist(target.pos) < triggerDistance) {
+        isHunting = true;
+        // On laisse faire la chasse (plus bas), on N'APPLIQUE PAS la souris ici
+    } else {
+        // Sinon, si pas de proie immédiate, on écoute le joueur
+        if (gameMode === "manual") {
+            // --- CONTRÔLE CLAVIER (FLECHES / ZQSD / WASD) ---
+            let inputX = 0;
+            let inputY = 0;
+            // GAUCHE : Flèche Gauche, A (65), Q (81)
+            if (keyIsDown(LEFT_ARROW) || keyIsDown(65) || keyIsDown(81)) inputX = -1;
+            // DROITE : Flèche Droite, D (68)
+            if (keyIsDown(RIGHT_ARROW) || keyIsDown(68)) inputX = 1;
+            // HAUT : Flèche Haut, W (87), Z (90)
+            if (keyIsDown(UP_ARROW) || keyIsDown(87) || keyIsDown(90)) inputY = -1;
+            // BAS : Flèche Bas, S (83)
+            if (keyIsDown(DOWN_ARROW) || keyIsDown(83)) inputY = 1;
+
+            if (inputX !== 0 || inputY !== 0) {
+                // Si une touche est pressée, on utilise le clavier
+                let targetVel = createVector(inputX, inputY);
+                targetVel.setMag(shark.maxSpeed);
+
+                // Steering simple vers la direction voulue
+                let steer = p5.Vector.sub(targetVel, shark.vel);
+                steer.limit(shark.maxForce * 2); // Force doublée pour réactivité clavier
+                shark.applyForce(steer);
+            } else {
+                // Sinon, on garde la SOURIS (mode "arrive" doux)
+                let mousePos = createVector(mouseX, mouseY);
+                let arriveForce = shark.arrive(mousePos);
+                arriveForce.mult(1.5);
+                shark.applyForce(arriveForce);
             }
+        }
+    }
+
+    // Chasse
+    // Chasse (Application de la force)
+    if (target) {
+        let distToFish = shark.pos.dist(target.pos);
+
+        if (distToFish < SHARK_HUNT_RADIUS) {
+            let pursueForce = shark.pursue(target);
+            let strength = map(distToFish, 0, SHARK_HUNT_RADIUS, 5, 1);
+            pursueForce.mult(strength);
+            shark.applyForce(pursueForce);
+
+            // Ligne et Indicateur supprimés (Demande utilisateur) 
+            /*
+            push();
+            let lineColor = target.isGolden ? color(255, 215, 0) : color(255, 50, 50);
+            stroke(lineColor);
+            strokeWeight(2);
+            drawingContext.setLineDash([8, 8]);
+            line(shark.pos.x, shark.pos.y, target.pos.x, target.pos.y);
+            drawingContext.setLineDash([]);
+            noFill();
+            stroke(lineColor);
+            strokeWeight(2);
+            let pulseSize = 30 + sin(frameCount * 0.15) * 10;
+            ellipse(target.pos.x, target.pos.y, pulseSize);
+            pop();
+            */
         }
     }
 
@@ -581,9 +758,14 @@ function updateShark() {
         let fish = flock[i];
         let distToFish = shark.pos.dist(fish.pos);
 
-        if (distToFish < SHARK_EAT_DISTANCE + shark.r / 3) {
+        if (distToFish < SHARK_EAT_DISTANCE + shark.r / 1.5) {
             eatFish(fish, i);
         }
+    }
+
+    // Afficher le chemin (debug) - CACHÉ pour "Angry Sharks"
+    if (gamePath && showAcademicPanel) {
+        gamePath.show();
     }
 
     // Éviter obstacles
@@ -623,6 +805,13 @@ function updateShark() {
 }
 
 function eatFish(fish, index) {
+    // Si c'est un danger (Poisson Épineux), on perd une vie !
+    if (fish.isHazard) {
+        takeDamage();
+        flock.splice(index, 1);
+        return;
+    }
+
     combo++;
     comboTimer = 120;
     if (combo > maxCombo) maxCombo = combo;
@@ -635,21 +824,91 @@ function eatFish(fish, index) {
 
     score += points;
 
-    // Effets
+    // Effets VISUELS (Sang + Texte)
     createEatEffect(fish.pos.x, fish.pos.y, fish.isGolden);
-    let text = fish.isGolden ? "🌟 +" + points + "!" : "+" + points;
+
+    // Texte de score simple (comme dans le jeu original)
+    let text = "+" + points;
     createFloatingText(fish.pos.x, fish.pos.y, text, combo > 1 || fish.isGolden);
+
+    // Animation du requin (Miam!)
+    shark.eatAnim = 20; // Animation plus visible (20 frames)
 
     screenShake = 6 + combo * 1.5;
 
     flock.splice(index, 1);
     fishEaten++;
     if (fish.isGolden) goldenFishEaten++;
+
+    // Jouer le son
+    // Jouer le son
+    if (soundEat && soundEat.isLoaded()) {
+        // INVERSION : On augmente la musique (motivant), on baisse le son du "croc"
+        if (soundBg && soundBg.isPlaying()) soundBg.setVolume(0.8, 0.1);
+
+        soundEat.setVolume(0.3); // DIMINUE
+        soundEat.rate(random(0.9, 1.1));
+        soundEat.play();
+
+        // Rétablir le volume normal de la musique
+        setTimeout(() => {
+            if (soundBg && soundBg.isPlaying()) soundBg.setVolume(0.4, 0.5);
+        }, 500);
+    }
 }
 
 function endGame(isWin) {
-    gameState = isWin ? "win" : "gameover";
+    if (isWin) {
+        gameState = "win";
+    } else {
+        gameState = "gameover";
+        if (soundRoar) soundRoar.play();
+    }
     saveHighScore();
+    if (soundBg && soundBg.isPlaying()) soundBg.stop();
+    if (soundBubbles && soundBubbles.isPlaying()) soundBubbles.stop();
+}
+
+// === GESTION DÉGÂTS ===
+function takeDamage() {
+    sharkLives--;
+    screenShake = 20;
+
+    // Feedback sonore/visuel
+    if (soundRoar) soundRoar.play();
+
+    createFloatingText(shark.pos.x, shark.pos.y, "OUCH!", true);
+
+    if (sharkLives <= 0) {
+        endGame(false);
+    }
+}
+
+// === GESTION HAZARDS (Barils) ===
+function updateHazards() {
+    // Spawner des barils aléatoirement (Seulement en mode JOUER)
+    if (gameMode === "manual" && random() < 0.01) {
+        hazards.push(new Barrel(random(width), -50));
+    }
+
+    for (let i = hazards.length - 1; i >= 0; i--) {
+        let h = hazards[i];
+        h.update();
+        h.show();
+
+        // Collision Requin
+        if (shark.pos.dist(h.pos) < shark.r / 2 + h.r) {
+            takeDamage();
+            // Explosion visual simple (secousse)
+            screenShake = 20;
+            hazards.splice(i, 1);
+            continue;
+        }
+
+        if (h.toDelete) {
+            hazards.splice(i, 1);
+        }
+    }
 }
 
 // ========================================
@@ -1049,94 +1308,63 @@ function drawStartScreen() {
     textSize(65);
     text("ATTACK!", width / 2, height / 3 + 140);
 
-    // Sélection difficulté
+    // Sélection MODE DE JEU
     fill(255);
     textSize(22);
     textStyle(NORMAL);
-    text("Choisissez votre difficulté:", width / 2, height / 2);
+    text("Choisissez votre mode de jeu :", width / 2, height / 2 + 60);
 
-    // Boutons centrés simplement
-    let btnW = 200;
+    let btnW = 280;
     let btnH = 90;
-    let spacing = 220;
-    let baseY = height / 2 + 100;
+    let spacing = 320;
+    let baseY = height / 2 + 150;
 
-    // Stocker les positions des boutons globalement avec détails
-    window.diffButtons = [
+    // Boutons JOUER et REGARDER
+    window.modeButtons = [
         {
-            x: width / 2 - spacing, y: baseY, w: btnW, h: btnH, level: "easy", name: "FACILE",
-            color: [80, 180, 80], time: "90s", fish: "40", desc: "Requin lent"
+            x: width / 2 - 160, y: baseY, w: btnW, h: btnH, mode: "manual", name: "JOUER",
+            color: [255, 80, 80], desc: "Contrôlez le requin (Souris/Clavier)", icon: "🎮"
         },
         {
-            x: width / 2, y: baseY, w: btnW, h: btnH, level: "normal", name: "NORMAL",
-            color: [200, 170, 50], time: "60s", fish: "30", desc: "Équilibré"
-        },
-        {
-            x: width / 2 + spacing, y: baseY, w: btnW, h: btnH, level: "hard", name: "DIFFICILE",
-            color: [200, 70, 70], time: "45s", fish: "20", desc: "Requin rapide!"
+            x: width / 2 + 160, y: baseY, w: btnW, h: btnH, mode: "auto", name: "REGARDER",
+            color: [80, 180, 255], desc: "IA joue toute seule", icon: "🍿"
         }
     ];
 
     let anyHover = false;
 
-    for (let btn of window.diffButtons) {
+    for (let btn of window.modeButtons) {
         let hover = mouseX > btn.x - btn.w / 2 && mouseX < btn.x + btn.w / 2 &&
             mouseY > btn.y - btn.h / 2 && mouseY < btn.y + btn.h / 2;
 
         if (hover) anyHover = true;
 
-        // Bouton avec effet
         push();
         if (hover) {
-            // Glow effect
             drawingContext.shadowBlur = 20;
             drawingContext.shadowColor = `rgb(${btn.color[0]}, ${btn.color[1]}, ${btn.color[2]})`;
             fill(btn.color[0], btn.color[1], btn.color[2]);
+            scale(1.05);
         } else {
-            fill(btn.color[0] * 0.5, btn.color[1] * 0.5, btn.color[2] * 0.5);
+            fill(btn.color[0] * 0.6, btn.color[1] * 0.6, btn.color[2] * 0.6);
         }
-        stroke(btn.color[0] * 0.3, btn.color[1] * 0.3, btn.color[2] * 0.3);
+        stroke(255);
         strokeWeight(3);
         rectMode(CENTER);
-        rect(btn.x, btn.y, btn.w, btn.h, 15);
-        pop();
+        rect(btn.x, btn.y, btn.w, btn.h, 20);
 
-        // Texte du bouton
         fill(255);
         noStroke();
-        textAlign(CENTER, CENTER);
-
-        textSize(22);
+        textSize(35);
         textStyle(BOLD);
-        text(btn.name, btn.x, btn.y - 25);
+        text(btn.icon + " " + btn.name, btn.x, btn.y - 15);
 
-        textSize(13);
+        textSize(16);
         textStyle(NORMAL);
-        fill(220);
-        text("⏱️ " + btn.time + " | 🐟 " + btn.fish, btn.x, btn.y);
+        text(btn.desc, btn.x, btn.y + 20);
 
-        fill(180);
-        textSize(11);
-        text(btn.desc, btn.x, btn.y + 18);
-
-        fill(255, 200, 50);
-        textSize(10);
-        text("🏆 " + highScores[btn.level], btn.x, btn.y + 35);
+        pop();
     }
-
-    // Instructions
-    fill(200);
-    textSize(16);
-    textStyle(NORMAL);
-    text("🎯 Objectif: Manger 100 poissons avant la fin du temps!", width / 2, height - 80);
-
-    fill(150);
-    textSize(13);
-    text("🌟 Poissons dorés = 50 pts | ⚡ Power-ups = bonus | 🔥 Combos = multiplicateur", width / 2, height - 55);
-
-    fill(100);
-    textSize(12);
-    text("Appuyez sur ESPACE pour démarrer en mode Normal", width / 2, height - 30);
 
     if (anyHover) cursor(HAND);
     else cursor(ARROW);
@@ -1163,11 +1391,21 @@ function drawGameOverScreen() {
 
     textAlign(CENTER, CENTER);
 
-    // Titre rose/corail
-    fill(255, 100, 120);
-    textSize(55);
-    textStyle(BOLD);
-    text("⏰ TEMPS ÉCOULÉ!", width / 2, height / 2 - 80);
+    // Titre
+    if (sharkLives <= 0) {
+        fill(255, 50, 50); // Rouge sang
+        textSize(60);
+        textStyle(BOLD);
+        text("💀 GAME OVER", width / 2, height / 2 - 80);
+        fill(255);
+        textSize(20);
+        text("Vous avez été tué !", width / 2, height / 2 - 45);
+    } else {
+        fill(255, 100, 120);
+        textSize(55);
+        textStyle(BOLD);
+        text("⏰ TEMPS ÉCOULÉ!", width / 2, height / 2 - 80);
+    }
 
     // Score final
     fill(255);
@@ -1260,21 +1498,32 @@ function drawRestartButton() {
 function drawUI() {
     push();
 
-    // Panneau score (gauche)
+    // Panneau score et vies (gauche)
     fill(0, 0, 0, 200);
     noStroke();
     rectMode(CORNER);
-    rect(10, 10, 220, 150, 18);
+    rect(10, 10, 220, 150, 18); // Background for score and combo/lives
 
-    fill(255);
+    // Top Left Info
     textAlign(LEFT, TOP);
-    textSize(16);
     textStyle(BOLD);
-    text("🏆 SCORE", 28, 22);
 
-    fill(255, 220, 80);
-    textSize(42);
-    text(score, 28, 42);
+    // Score
+    textSize(24);
+    fill(255);
+    text("🏆 SCORE", 28, 22);
+    textSize(32);
+    fill(255, 215, 0);
+    text(score, 28, 50);
+
+    // VIES (Cœurs)
+    textSize(30);
+    let hearts = "";
+    for (let i = 0; i < 3; i++) {
+        if (i < sharkLives) hearts += "❤️ ";
+        else hearts += "🖤 ";
+    }
+    text(hearts, 28, 90);
 
     // Combo
     if (combo > 1) {
@@ -1497,18 +1746,33 @@ function drawAcademicPanel() {
 
 function mousePressed() {
     if (gameState === "start") {
-        // Utiliser les boutons définis dans drawStartScreen
-        if (window.diffButtons) {
-            for (let btn of window.diffButtons) {
+        // Sélection MODE DE JEU
+        if (window.modeButtons) {
+            for (let btn of window.modeButtons) {
                 if (mouseX > btn.x - btn.w / 2 && mouseX < btn.x + btn.w / 2 &&
                     mouseY > btn.y - btn.h / 2 && mouseY < btn.y + btn.h / 2) {
-                    setDifficulty(btn.level);
+
+                    gameMode = btn.mode; // "manual" ou "auto"
                     gameState = "playing";
                     initSimulation();
+
+                    // Si mode Auto/Regarder, on supprime les barils
+                    if (gameMode === "auto") {
+                        hazards = [];
+                    }
                     return;
                 }
             }
         }
+    } else if (gameState === "playing") {
+        spawnFish(mouseX, mouseY);
+        // Jouer le son "pupple" (splash)
+        if (soundSplash && soundSplash.isLoaded()) {
+            soundSplash.rate(random(1.1, 1.4)); // Son un peu plus aigu
+            soundSplash.setVolume(0.6);
+            soundSplash.play();
+        }
+        createEatEffect(mouseX, mouseY, false);
     } else if (gameState === "gameover" || gameState === "win") {
         let btnX = width / 2;
         let btnY = height / 2 + 180;
@@ -1561,6 +1825,14 @@ function keyPressed() {
         if (key === ' ') {
             gameState = "start";
         }
+    }
+}
+
+function updateCreatures() {
+    for (let c of creatures) {
+        c.flock(flock); // Ils peuvent réagir un peu
+        c.update();
+        c.show();
     }
 }
 
